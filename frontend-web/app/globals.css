@@ -1,0 +1,249 @@
+/* =============================================================================
+   カロリー管理アプリ Web フロントエンド
+   docs/assets/doc.css と同系のトークンを使い、ドキュメントとアプリの見た目を揃える。
+   色は必ず CSS 変数を経由すること（テーマ切替が壊れるため）。
+   ============================================================================= */
+
+:root {
+  --paper:      #FCFBF8;
+  --panel:      #F3F1EB;
+  --surface:    #FFFFFF;
+  --ink:        #15181B;
+  --ink-soft:   #40474D;
+  --muted:      #6E757B;
+  --rule:       #15181B;
+  --rule-soft:  #CFCCC3;
+  --accent:     #0F6B57;
+  --accent-bg:  #E2EFEA;
+  --warn:       #A63A16;
+  --warn-bg:    #F6E7DF;
+
+  /* PFC の系統色。アクセントとは別に、栄養素を識別するための 3 色。 */
+  --protein:    #2F6FA8;
+  --fat:        #B8791F;
+  --carb:       #5E8C3A;
+
+  --f-sans: "Yu Gothic UI", "Yu Gothic", "YuGothic", "Hiragino Sans",
+            "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "Cascadia Mono", "Cascadia Code", "Consolas", ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper:      #14171A;
+    --panel:      #1D2226;
+    --surface:    #1A1F23;
+    --ink:        #ECEAE4;
+    --ink-soft:   #BFC4C8;
+    --muted:      #8C949A;
+    --rule:       #ECEAE4;
+    --rule-soft:  #363D43;
+    --accent:     #55C4A6;
+    --accent-bg:  #16332C;
+    --warn:       #E08A5F;
+    --warn-bg:    #3A241A;
+    --protein:    #79AEDD;
+    --fat:        #E0B25F;
+    --carb:       #9FC672;
+  }
+}
+
+:root[data-theme="dark"] {
+  --paper:      #14171A;
+  --panel:      #1D2226;
+  --surface:    #1A1F23;
+  --ink:        #ECEAE4;
+  --ink-soft:   #BFC4C8;
+  --muted:      #8C949A;
+  --rule:       #ECEAE4;
+  --rule-soft:  #363D43;
+  --accent:     #55C4A6;
+  --accent-bg:  #16332C;
+  --warn:       #E08A5F;
+  --warn-bg:    #3A241A;
+  --protein:    #79AEDD;
+  --fat:        #E0B25F;
+  --carb:       #9FC672;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--f-sans);
+  font-size: 15px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "palt" 1;
+}
+
+/* 数字は必ず桁を揃える。栄養値は並べて比較するものなので。 */
+.num { font-variant-numeric: tabular-nums; }
+
+h1, h2, h3 { margin: 0; line-height: 1.3; text-wrap: balance; }
+
+a { color: var(--accent); }
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---------- レイアウト ---------- */
+.shell { max-width: 900px; margin: 0 auto; padding: 24px 20px 80px; }
+
+.pageHead {
+  display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px;
+  padding-bottom: 12px; margin-bottom: 24px;
+  border-bottom: 4px solid var(--rule);
+}
+.pageHead h1 { font-size: 22px; font-weight: 800; }
+.pageHead .sub { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+
+.card {
+  background: var(--surface);
+  border: 1.5px solid var(--rule-soft);
+  padding: 20px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.card h2 {
+  font-size: 13px; font-weight: 700; letter-spacing: .04em;
+  color: var(--ink-soft);
+  padding-bottom: 8px; border-bottom: 1px solid var(--rule-soft);
+}
+
+.grid { display: grid; gap: 16px; }
+.grid2 { grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+
+/* ---------- フォーム ---------- */
+label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; color: var(--ink-soft); }
+
+input, select {
+  font: inherit;
+  font-family: var(--f-sans);
+  color: var(--ink);
+  background: var(--paper);
+  border: 1.5px solid var(--rule-soft);
+  padding: 9px 11px;
+  width: 100%;
+}
+input:disabled, select:disabled { opacity: .55; }
+input[type="number"] { font-variant-numeric: tabular-nums; }
+
+button {
+  font: inherit;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  border: 1.5px solid var(--accent);
+  background: var(--accent);
+  color: var(--paper);
+  padding: 10px 18px;
+}
+button:hover:not(:disabled) { filter: brightness(1.08); }
+button:disabled { cursor: not-allowed; opacity: .5; }
+
+button.secondary { background: transparent; color: var(--accent); }
+button.danger {
+  background: transparent; color: var(--warn); border-color: var(--warn);
+  font-size: 12px; padding: 5px 10px;
+}
+
+.row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; }
+.row > * { flex: 1 1 140px; }
+.row > button { flex: 0 0 auto; }
+
+/* ---------- 通知 ---------- */
+.error, .notice {
+  font-size: 13px; padding: 10px 14px; border-left: 4px solid var(--warn);
+  background: var(--warn-bg); color: var(--ink);
+}
+.notice { border-left-color: var(--accent); background: var(--accent-bg); }
+
+.muted { color: var(--muted); font-size: 13px; }
+
+/* ---------- 数値タイル ---------- */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 1px; background: var(--rule-soft); }
+.tile { background: var(--surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; }
+.tile .k {
+  font-family: var(--f-mono); font-size: 10px; letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.tile .v { font-size: 26px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.15; }
+.tile .u { font-size: 12px; font-weight: 500; color: var(--muted); }
+.tile.over .v { color: var(--warn); }
+
+/* ---------- PFC バー ---------- */
+.bars { display: flex; flex-direction: column; gap: 12px; }
+.bar { display: grid; grid-template-columns: 76px 1fr auto; gap: 12px; align-items: center; font-size: 13px; }
+.bar .track { height: 9px; background: var(--panel); border: 1px solid var(--rule-soft); overflow: hidden; }
+.bar .fill { height: 100%; }
+.bar .amt { font-variant-numeric: tabular-nums; font-size: 12px; color: var(--ink-soft); white-space: nowrap; }
+.fill.kcal { background: var(--accent); }
+.fill.protein { background: var(--protein); }
+.fill.fat { background: var(--fat); }
+.fill.carb { background: var(--carb); }
+.fill.over { background: var(--warn); }
+
+/* ---------- 一覧 ---------- */
+.list { display: flex; flex-direction: column; }
+.listItem {
+  display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center;
+  padding: 11px 0; border-bottom: 1px solid var(--rule-soft);
+}
+.listItem:last-child { border-bottom: none; }
+.listItem .name { flex: 1 1 160px; font-weight: 600; }
+.listItem .meta { font-family: var(--f-mono); font-size: 12px; color: var(--muted); }
+
+.tableWrap { overflow-x: auto; }
+
+/* ---------- ナビ ---------- */
+.nav {
+  border-bottom: 1.5px solid var(--rule-soft);
+  background: var(--surface);
+}
+.navInner {
+  max-width: 900px; margin: 0 auto; padding: 0 20px;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px 20px;
+}
+.navBrand { font-weight: 800; font-size: 14px; padding: 14px 0; margin-right: auto; }
+.navLink {
+  padding: 14px 2px; font-size: 13.5px; font-weight: 600;
+  color: var(--ink-soft); text-decoration: none;
+  border-bottom: 3px solid transparent;
+}
+.navLink:hover { color: var(--ink); }
+.navLink.active { color: var(--accent); border-bottom-color: var(--accent); }
+.navUser { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 10px; }
+.navUser button {
+  background: none; border: none; color: var(--muted);
+  font-size: 12px; font-weight: 600; padding: 4px;
+}
+.navUser button:hover { color: var(--warn); }
+
+/* ---------- グラフ ---------- */
+.chart { width: 100%; height: auto; display: block; overflow: visible; }
+.chartLegend {
+  display: flex; flex-wrap: wrap; gap: 6px 18px;
+  font-family: var(--f-mono); font-size: 11px; color: var(--muted);
+}
+.chartLegend span { display: flex; align-items: center; gap: 6px; }
+.chartLegend i { width: 14px; height: 3px; display: block; }
+
+@media (max-width: 560px) {
+  .shell { padding: 18px 14px 60px; }
+  .card { padding: 16px; }
+  .bar { grid-template-columns: 62px 1fr; }
+  .bar .amt { grid-column: 2; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { animation: none !important; transition: none !important; }
+}

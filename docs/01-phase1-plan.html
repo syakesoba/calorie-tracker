@@ -1,0 +1,356 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phase 1 — MVP 貫通</title>
+<link rel="stylesheet" href="assets/doc.css">
+</head>
+<body>
+<div class="wrap">
+
+<header class="masthead">
+  <p class="eyebrow">Phase 1 — Plan &amp; Design</p>
+  <h1>MVP 貫通</h1>
+  <p class="subtitle">食事を記録し、日別に集計し、目標に対する達成状況をグラフで見るまでを 1 本通す</p>
+  <div class="meta">
+    <span><b>状態</b> 実装完了 / 結合テスト未実行</span>
+    <span><b>対象</b> Java 実装 + Next.js</span>
+    <span><b>前提</b> Phase 0 完了</span>
+    <span><b>更新</b> 2026-08-17</span>
+    <span><a href="index.html">← ドキュメント一覧</a></span>
+  </div>
+</header>
+
+<div class="callout">
+  <span class="lbl">現在の状態</span>
+  <p>バックエンドとフロントエンドの実装は完了し、<strong>ユニットテスト 15 件は成功している</strong>（目標算出 8 件、栄養値の換算・合算 7 件）。一方、<strong>DB を要する結合テストと画面の通し確認は未実行</strong>である。実装中に Docker Desktop が停止し、再起動できなかったため。手順は 8 章にまとめてある。</p>
+</div>
+
+<section>
+  <h2><span class="n">01</span>このフェーズのゴール</h2>
+
+  <p><strong>完了条件は「ブラウザで 1 日分の食事を記録し、目標に対する達成状況が見える」こと。</strong>横に機能を広げるより、縦に 1 本通すことを優先する。動くものが手元にあれば、次に何が足りないかは自分で使えば分かるため。</p>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>やること</th><th>やらないこと（後続フェーズ）</th></tr></thead>
+      <tbody>
+        <tr><td>食品名の検索と手入力による記録</td><td>バーコードスキャン（Phase 3）</td></tr>
+        <tr><td>カロリーと PFC の日別集計</td><td>詳細栄養素・週別月別集計（Phase 3）</td></tr>
+        <tr><td>体重記録と推移グラフ</td><td>運動記録・消費カロリー（Phase 4）</td></tr>
+        <tr><td>Mifflin-St Jeor による目標算出</td><td>写真からの AI 推定（Phase 4）</td></tr>
+        <tr><td>テンプレート／履歴からのコピー</td><td>Kotlin 実装・Expo アプリ（Phase 2）</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout key">
+    <span class="lbl">Phase 2 を見据えた進め方</span>
+    <p>ここで確定させる API 仕様は、そのまま Kotlin 実装が満たすべき契約になる。<strong>実装より先に <code>api/openapi.yaml</code> を書き、それに合わせて実装する</strong>順序を崩さないこと。順序が逆になると仕様が実装に引きずられ、Phase 2 で「Java 版の都合」が Kotlin 側に漏れる。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">02</span>API 設計</h2>
+
+  <p>すべて <code>/api</code> 配下。<code>/api/auth/*</code> 以外は認証必須で、データは常にログイン中のユーザーでスコープする。</p>
+
+  <h3><span class="n">2.1</span>食品マスタ</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>メソッド / パス</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td class="t-key">GET /api/foods</td><td>食品名の部分一致検索。<code>query</code> と <code>limit</code>。自分が登録した食品も検索対象に含む。</td></tr>
+        <tr><td class="t-key">POST /api/foods</td><td>マスタに無い食品をユーザーが登録する。<code>source=USER</code> として保存し、登録者本人だけが検索できる。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><span class="n">2.2</span>プロフィールと目標</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>メソッド / パス</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td class="t-key">GET /api/profile</td><td>身体情報。未設定なら 404。</td></tr>
+        <tr><td class="t-key">PUT /api/profile</td><td>性別・生年月日・身長・活動レベルの登録／更新（upsert）。</td></tr>
+        <tr><td class="t-key">GET /api/goals/suggestion</td><td>BMR・TDEE・目標カロリー・目標 PFC の<strong>提案</strong>を返す。保存はしない。</td></tr>
+        <tr><td class="t-key">GET /api/goals/current</td><td>今日時点で有効な目標。</td></tr>
+        <tr><td class="t-key">PUT /api/goals</td><td>目標を確定して保存する。</td></tr>
+      </tbody>
+    </table>
+
+    </div>
+
+  <p><strong>提案と保存を分けている</strong>のは、算出結果をそのまま押し付けず、ユーザーが数値を見てから調整できるようにするため。提案 API は副作用を持たない純粋な計算であり、テストも書きやすい。</p>
+
+  <h3><span class="n">2.3</span>記録</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>メソッド / パス</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td class="t-key">GET /api/meal-logs</td><td><code>date</code> 指定でその日の食事記録一覧。</td></tr>
+        <tr><td class="t-key">POST /api/meal-logs</td><td>食事を記録する。食品 ID と分量を渡すと、サーバー側で栄養値を計算してスナップショットを作る。</td></tr>
+        <tr><td class="t-key">DELETE /api/meal-logs/{id}</td><td>削除。他人の記録を指定した場合は 404。</td></tr>
+        <tr><td class="t-key">GET /api/body-records</td><td><code>from</code>〜<code>to</code> の体重推移。</td></tr>
+        <tr><td class="t-key">PUT /api/body-records/{date}</td><td>その日の体重を登録／上書き（upsert）。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3><span class="n">2.4</span>集計</h3>
+  <div class="scroll">
+    <table>
+      <thead><tr><th>メソッド / パス</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td class="t-key">GET /api/summaries/daily</td><td>指定日の摂取カロリー・PFC、目標との差分、食事区分ごとの内訳。ダッシュボードの主データ。</td></tr>
+        <tr><td class="t-key">GET /api/summaries/range</td><td><code>from</code>〜<code>to</code> の日別集計と体重推移。グラフ用。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout">
+    <span class="lbl">他人のデータに到達させない</span>
+    <p>ID を指定して取得・削除する API は、<strong>すべて「ID が一致し、かつ user_id が自分である」条件で引く。</strong>存在しても他人のものなら 403 ではなく <strong>404</strong> を返す。403 だと「その ID は存在する」ことを教えてしまうため。この挙動は結合テストで検証する。</p>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">03</span>目標カロリーの算出</h2>
+
+  <p>採用式は <strong>Mifflin-St Jeor</strong>。体重はプロフィールではなく <strong>体重記録の最新値</strong>を使う。体重は日々変わるものであり、プロフィールに固定値として持たせると実態とずれるため。</p>
+
+<pre><code>BMR（男性） = 10 × 体重kg + 6.25 × 身長cm − 5 × 年齢 + 5
+BMR（女性） = 10 × 体重kg + 6.25 × 身長cm − 5 × 年齢 − 161
+
+TDEE = BMR × 活動係数
+  SEDENTARY   1.2     ほぼ座位
+  LIGHT       1.375   軽い運動（週1〜3回）
+  MODERATE    1.55    中程度（週3〜5回）
+  ACTIVE      1.725   激しい（週6〜7回）
+  VERY_ACTIVE 1.9     非常に激しい
+
+目標摂取カロリー = TDEE − 1日あたりの目標赤字
+  体脂肪 1kg ≒ 7,200 kcal
+  1日の赤字 = 月間目標減量kg × 7200 ÷ 30
+
+目標 PFC（既定値）
+  P 20% / F 25% / C 55%
+  g 換算  P,C は 4 kcal/g、F は 9 kcal/g</code></pre>
+
+  <h3><span class="n">3.1</span>安全側の下限を設ける</h3>
+  <p>減量ペースを大きくすると目標カロリーが際限なく下がってしまう。<strong>算出結果が BMR を下回る場合は BMR を下限として打ち切る。</strong>あわせて、下限に張り付いたことを応答に含め、画面で「このペースは達成できない」と伝えられるようにする。</p>
+
+  <div class="callout">
+    <span class="lbl">この機能は医療ではない</span>
+    <p>Mifflin-St Jeor は推定式であり、個人差がある。健康上の判断に使うものではないことを画面にも明記する。</p>
+  </div>
+
+  <h3><span class="n">3.2</span>実装方針</h3>
+  <p>算出ロジックは DB もリクエストも触らない<strong>純粋関数</strong>として切り出す。理由が 2 つある。ユニットテストが値の入出力だけで書けること、そして<strong>Phase 2 で Kotlin に移植したときに、同じテストケースをそのまま流して等価性を確認できる</strong>こと。言語比較の題材としても、副作用のない計算は差分が読み取りやすい。</p>
+</section>
+
+<section>
+  <h2><span class="n">04</span>食品マスタのデータ</h2>
+
+  <p>本来の出典は<strong>日本食品標準成分表（文部科学省）</strong>だが、Phase 1 ではまず MVP を通すことを優先し、<strong>代表的な食品に絞ったシードデータ</strong>を Flyway で投入する。</p>
+
+  <div class="callout">
+    <span class="lbl">データの出所を偽らない</span>
+    <p>シードデータは <code>source = 'SEED'</code> として登録し、成分表由来の <code>MEXT</code> とは区別する。<strong>おおよその代表値であり、正確な栄養計算には使えない。</strong>Phase 3 で公式の成分表 CSV を取り込み、<code>MEXT</code> として置き換える。この区別を付けずに <code>MEXT</code> を名乗らせると、後から「どの値が検証済みか」が分からなくなる。</p>
+  </div>
+
+  <p>ユーザーが登録した食品は <code>source = 'USER'</code> となり、登録者本人の検索にのみ現れる。Phase 3 のバーコード機能で「マスタに無い商品を手動登録して自分のマスタを育てる」動線は、この仕組みをそのまま使う。</p>
+</section>
+
+<section>
+  <h2><span class="n">05</span>栄養値スナップショットの生成</h2>
+
+  <p>Phase 0 で用意した <code>meal_log_items</code> の非正規化を、ここで実際に使う。記録時の処理は次のとおり。</p>
+
+  <div class="steps">
+    <div class="step">
+      <span class="no">1</span>
+      <div>
+        <h4>クライアントは食品 ID と分量だけを送る</h4>
+        <p>栄養値をクライアントに計算させない。計算式がクライアントとサーバーに二重に存在すると、Web とモバイルで結果がずれる余地が生まれる。</p>
+      </div>
+    </div>
+    <div class="step">
+      <span class="no">2</span>
+      <div>
+        <h4>サーバーがマスタを引いて 100g あたりから換算する</h4>
+<pre><code>その食品の栄養値 = マスタの値(100gあたり) × 分量g ÷ 100</code></pre>
+      </div>
+    </div>
+    <div class="step">
+      <span class="no">3</span>
+      <div>
+        <h4>換算結果を meal_log_items の行に書き込む</h4>
+        <p>食品名も一緒に複写する。マスタから食品が消えても、記録には何を食べたかが残る。</p>
+      </div>
+    </div>
+  </div>
+
+  <p><strong>丸め方を先に決めておく。</strong>換算結果は小数第 2 位まで保持し、画面表示の段階で整数に丸める。DB 側で丸めると、1 日分を合計したときに誤差が積み上がるため。</p>
+</section>
+
+<section>
+  <h2><span class="n">06</span>画面</h2>
+
+  <div class="scroll">
+    <table>
+      <thead><tr><th>画面</th><th>内容</th></tr></thead>
+      <tbody>
+        <tr><td class="t-key">ログイン / 新規登録</td><td>メールとパスワード。トークンは保持し、期限切れ時は自動でリフレッシュする。</td></tr>
+        <tr><td class="t-key">ダッシュボード</td><td>最上部に当日の <strong>摂取 kcal / 目標 kcal / 残り</strong>。その下に PFC バランス、直近 30 日の摂取カロリーと体重の推移グラフ。</td></tr>
+        <tr><td class="t-key">食事記録</td><td>食事区分を選び、食品を検索して分量を指定。テンプレートと履歴からのコピーもここから。</td></tr>
+        <tr><td class="t-key">体重記録</td><td>日付と体重。グラフには実測値と 7 日移動平均を重ねる。</td></tr>
+        <tr><td class="t-key">初期設定</td><td>プロフィール入力 → 目標の提案を確認 → 確定。初回ログイン時に通す。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <p>グラフは外部ライブラリを使わず、<strong>SVG を直接描く</strong>。CDN を参照しない方針であること、必要な表現が折れ線と面の塗りに限られること、そして Phase 2 で Expo 側に持っていく際に依存を増やしたくないことによる。</p>
+
+  <h3><span class="n">6.1</span>体重の 7 日移動平均</h3>
+  <p>体重は水分量で日々 1kg 前後動くため、実測値だけでは傾向が読めない。<strong>実測点は薄く、移動平均線を主役として描く。</strong>記録が無い日は平均の計算から除外し、線を途切れさせずに繋ぐ。</p>
+</section>
+
+<section>
+  <h2><span class="n">07</span>進め方</h2>
+
+  <div class="steps">
+    <div class="step"><span class="no">1</span><div><h4>OpenAPI 仕様を拡張する</h4><p>実装より先に契約を確定させる。</p></div></div>
+    <div class="step"><span class="no">2</span><div><h4>食品マスタとシードデータ</h4><p>検索 API とユーザー独自食品の登録。</p></div></div>
+    <div class="step"><span class="no">3</span><div><h4>プロフィールと目標算出</h4><p>純粋関数として切り出し、ユニットテストを先に書く。</p></div></div>
+    <div class="step"><span class="no">4</span><div><h4>食事記録と体重記録</h4><p>スナップショット生成を含む。</p></div></div>
+    <div class="step"><span class="no">5</span><div><h4>日別集計 API</h4><p>ダッシュボードとグラフのデータ源。</p></div></div>
+    <div class="step"><span class="no">6</span><div><h4>Next.js フロントエンド</h4><p>ここで初めて縦に繋がる。</p></div></div>
+    <div class="step"><span class="no">7</span><div><h4>起動方法をドキュメントに追記</h4><p>実装完了時点でこのファイルを更新する。</p></div></div>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">08</span>起動方法と動作確認</h2>
+
+  <p>Phase 0 の手順に、フロントエンドの起動が加わる。ターミナルを 2 つ使う。</p>
+
+  <div class="steps">
+    <div class="step">
+      <span class="no">1</span>
+      <div>
+        <h4>Docker Desktop を起動しておく</h4>
+        <p>タスクトレイのアイコンが緑になるまで待つ。停止していると次の手順が失敗する。</p>
+<pre><code>docker info</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="no">2</span>
+      <div>
+        <h4>データベースとバックエンドを起動する（ターミナル 1）</h4>
+        <p>Flyway が V2 のシードデータまで適用し、代表的な食品 66 件が入る。</p>
+<pre><code>cd C:\work\03_claude\02_Java
+docker compose up -d db
+cd backend-java
+.\gradlew.bat bootRun</code></pre>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="no">3</span>
+      <div>
+        <h4>フロントエンドを起動する（ターミナル 2）</h4>
+        <p>初回のみ環境変数ファイルを作る。既定値のままでも動く。</p>
+<pre><code>cd C:\work\03_claude\02_Java\frontend-web
+copy .env.local.example .env.local
+npm install
+npm run dev</code></pre>
+        <p>ブラウザで <code>http://localhost:3000</code> を開く。</p>
+      </div>
+    </div>
+
+    <div class="step">
+      <span class="no">4</span>
+      <div>
+        <h4>画面を通して確認する</h4>
+        <p>次の順に操作すると、Phase 1 の完了条件をひととおり通せる。</p>
+        <ol>
+          <li>「アカウントを作る」で登録する（登録後は自動で目標設定へ進む）</li>
+          <li>身体情報と体重を入力し、<strong>目標を算出する</strong> → 「この目標を採用する」</li>
+          <li>「食事を記録」で <code>ごはん</code> を検索して追加し、分量を入れて記録する</li>
+          <li>ダッシュボードで摂取・目標・残りと PFC バー、推移グラフを確認する</li>
+        </ol>
+      </div>
+    </div>
+  </div>
+
+  <h3><span class="n">8.1</span>テストの実行</h3>
+  <p>DB を起動した状態で実行する。ユニットテストだけなら DB は不要。</p>
+<pre><code><span class="c"># すべて（結合テストを含む。DB が必要）</span>
+cd backend-java
+.\gradlew.bat test
+
+<span class="c"># DB 不要のユニットテストだけ</span>
+.\gradlew.bat test --tests "*GoalCalculatorTest" --tests "*NutritionTest"</code></pre>
+
+  <h3><span class="n">8.2</span>Kotlin 実装に切り替えて確認する（Phase 2 以降）</h3>
+  <p>フロントエンドの接続先は環境変数 1 つで切り替わる。<code>.env.local</code> のポートを
+  8081 にすれば、同じ画面が Kotlin 実装に繋がる。<strong>これが「2 実装が同じ契約を
+  満たしている」ことの一番わかりやすい確認方法になる。</strong></p>
+<pre><code>NEXT_PUBLIC_API_BASE_URL=http://localhost:8081/api</code></pre>
+
+  <h3><span class="n">8.3</span>つまずいたときは</h3>
+  <div class="faq">
+    <details>
+      <summary>画面に「サーバーに接続できません」と出る</summary>
+      <p>バックエンドが起動していない。ターミナル 1 で <code>bootRun</code> が動いているか、
+      <code>http://localhost:8080/actuator/health</code> が <code>UP</code> を返すか確認する。</p>
+    </details>
+    <details>
+      <summary>食品検索で何も出てこない</summary>
+      <p>V2 のシードデータが適用されていない可能性がある。Flyway の適用状況を確認する。</p>
+      <pre><code>docker exec calorie-db psql -U postgres -d calorie -c "SELECT version, description, success FROM flyway_schema_history;"</code></pre>
+    </details>
+    <details>
+      <summary>目標算出で「先に体重を記録してください」と出る</summary>
+      <p>体重記録が 1 件も無い状態では BMR を計算できない。目標設定画面の「体重」欄を
+      埋めてから算出する。ダッシュボードの体重カードから記録してもよい。</p>
+    </details>
+    <details>
+      <summary>探している食品が見つからない</summary>
+      <p>Phase 1 のシードは代表的な 66 件のみ。公式の成分表の取り込みは Phase 3。
+      当面は食事記録画面から独自の食品を登録して使う。</p>
+    </details>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">09</span>実装で決めたこと</h2>
+
+  <h3><span class="n">9.1</span>栄養値をクライアントに計算させない</h3>
+  <p>記録の API は<strong>食品 ID と分量だけ</strong>を受け取る。栄養値をリクエストに含めない設計にしたため、クライアントが値を偽装して送っても無視される。計算式がクライアントとサーバーに二重に存在すると、Web とモバイルで結果がずれる余地が生まれるためで、この挙動は結合テストで検証している。</p>
+
+  <h3><span class="n">9.2</span>合算時の任意項目の扱い</h3>
+  <p>塩分・食物繊維・糖質はデータが無い食品がある。合算の際、<strong>片方が未設定なら 0 として加算する</strong>。合計自体を未設定にすると「1 品でも塩分不明なら 1 日の塩分が表示されない」ことになり、実用に耐えないため。両方とも未設定のときだけ未設定を保つ。この規則は <code>Nutrition</code> 1 箇所に閉じており、集計を SQL の <code>sum()</code> でなくアプリケーション側で行っているのも同じ理由による。</p>
+
+  <h3><span class="n">9.3</span>他人のデータに到達させない</h3>
+  <p>ID 指定の取得・削除は、クエリの条件に <code>user_id</code> を含めている。取得後に所有者を確認する方式だと、確認を書き忘れる余地が残るため。他人のリソースは<strong>403 ではなく 404</strong> を返す。403 だと「その ID は存在する」ことを教えてしまう。他人が登録した独自食品も同様に、検索にも記録にも使えない。</p>
+
+  <h3><span class="n">9.4</span>トークンの持ち方</h3>
+  <p>アクセストークンとリフレッシュトークンは <code>localStorage</code> に置いている。HttpOnly Cookie の方が XSS には強いが、<strong>Phase 2 で同じ API を Expo から叩くため、ブラウザの Cookie に依存しない持ち方に揃えた。</strong>学習用途としての割り切りであり、商用なら再検討すべき点として記録しておく。</p>
+  <p>あわせて、リフレッシュ処理は同時多発しないよう 1 本の Promise に束ねている。ダッシュボードは複数の API を並列で呼ぶので、トークン失効時にリフレッシュが同時に走ると、ローテーションで互いを失効させてしまうため。</p>
+
+  <h3><span class="n">9.5</span>グラフを 2 段に分けた</h3>
+  <p>カロリーと体重は縦軸の単位が違う。1 つの図に 2 軸を詰めると目盛りの対応が読み取りにくいため、<strong>横軸だけを揃えた 2 段構成</strong>にした。外部のチャートライブラリは使わず SVG を直接描いている。</p>
+</section>
+
+<footer>
+  <span>Phase 1 — MVP 貫通</span>
+  <span>2026-08-17 作成</span>
+</footer>
+
+</div>
+</body>
+</html>

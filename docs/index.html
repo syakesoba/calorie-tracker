@@ -14,10 +14,10 @@
   <h1>カロリー管理アプリ</h1>
   <p class="subtitle">Java と Kotlin を同一 API 仕様で実装して比較する、Web + モバイルの栄養記録アプリ</p>
   <div class="meta">
-    <span><b>現在</b> Phase 0 完了</span>
-    <span><b>次</b> Phase 1（MVP 貫通）</span>
+    <span><b>現在</b> Phase 1 実装完了</span>
+    <span><b>次</b> Phase 2（Kotlin 実装 + Expo）</span>
     <span><b>予算</b> 0 円</span>
-    <span><b>更新</b> 2026-08-16</span>
+    <span><b>更新</b> 2026-08-17</span>
   </div>
 </header>
 
@@ -31,24 +31,32 @@
       <span class="t">基盤構築</span>
       <span class="d">Docker Compose、Flyway 初期スキーマ、JWT 認証、OpenAPI 骨格。起動方法・接続情報・設計判断の記録・トラブルシュートを含む。</span>
     </a>
+
+    <a class="card" href="01-phase1-plan.html">
+      <span class="k">Phase 1 — 実装完了</span>
+      <span class="t">MVP 貫通</span>
+      <span class="d">食事記録 → 日別集計 → グラフ表示。計画と詳細設計に加えて、Web 版の起動方法、動作確認の手順、実装で決めたことを収録。</span>
+    </a>
   </div>
 
-  <p style="color:var(--muted);font-size:13.5px;">Phase 1 以降のドキュメントは、各フェーズに着手する前に追加する。</p>
+  <p style="color:var(--muted);font-size:13.5px;">Phase 2 以降のドキュメントは、各フェーズに着手する前に追加する。</p>
 </section>
 
 <section>
   <h2><span class="n">02</span>すぐ動かす</h2>
-  <p>詳しい手順は <a href="00-phase0-setup.html">Phase 0 のドキュメント</a>にある。最短で立ち上げるならこれだけでよい。</p>
-<pre><code><span class="c"># データベースを起動</span>
+  <p>詳しい手順は <a href="01-phase1-plan.html">Phase 1 のドキュメント</a>にある。ターミナルを 2 つ使う。</p>
+<pre><code><span class="c"># ターミナル 1 — DB とバックエンド</span>
 cd C:\work\03_claude\02_Java
 docker compose up -d db
-
-<span class="c"># バックエンドを起動（Flyway もここで走る）</span>
 cd backend-java
 .\gradlew.bat bootRun
 
-<span class="c"># 別のターミナルで疎通確認</span>
-curl http://localhost:8080/actuator/health</code></pre>
+<span class="c"># ターミナル 2 — Web フロントエンド</span>
+cd C:\work\03_claude\02_Java\frontend-web
+copy .env.local.example .env.local
+npm install
+npm run dev</code></pre>
+  <p>ブラウザで <code>http://localhost:3000</code> を開く。Docker Desktop を先に起動しておくこと。</p>
 </section>
 
 <section>

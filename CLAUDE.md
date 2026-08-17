@@ -88,7 +88,7 @@
 | Phase | 内容 | 状態 |
 |---|---|---|
 | 0 | 基盤（Docker Compose、Flyway 初期スキーマ、認証、OpenAPI 骨格） | **完了** |
-| 1 | MVP 貫通（Java + Next.js：記録 → 日別集計 → グラフ） | 未着手 |
+| 1 | MVP 貫通（Java + Next.js：記録 → 日別集計 → グラフ） | 実装完了（結合テスト未実行） |
 | 2 | Kotlin 実装 + Expo アプリ + 契約テスト | 未着手 |
 | 3 | バーコード、詳細栄養素、週別・月別集計 | 未着手 |
 | 4 | 運動記録、写真 AI 推定（モック） | 未着手 |
@@ -107,6 +107,12 @@ cd backend-java && ./gradlew bootRun
 
 # テスト（事前に DB を起動しておくこと。calorie_test に接続する）
 cd backend-java && ./gradlew test
+
+# DB 不要のユニットテストだけ
+cd backend-java && ./gradlew test --tests "*GoalCalculatorTest" --tests "*NutritionTest"
+
+# Web フロントエンド起動（別ターミナル）
+cd frontend-web && npm run dev
 ```
 
 ## 10. 環境固有の注意

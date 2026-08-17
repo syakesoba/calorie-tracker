@@ -32,6 +32,18 @@ servers:
 tags:
   - name: auth
     description: 認証とアカウント
+  - name: foods
+    description: 食品マスタ
+  - name: profile
+    description: 身体情報
+  - name: goals
+    description: 目標カロリーと目標 PFC
+  - name: body-records
+    description: 体重・体脂肪率の記録
+  - name: meal-logs
+    description: 食事の記録
+  - name: summaries
+    description: 栄養集計
 
 paths:
   /auth/signup:
@@ -175,6 +187,372 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
 
+  # ---------------------------------------------------------------------------
+  # 食品マスタ
+  # ---------------------------------------------------------------------------
+
+  /foods:
+    get:
+      tags: [foods]
+      summary: 食品を検索する
+      description: |
+        食品名の部分一致で検索する。共有マスタ（SEED / MEXT / OFF）に加えて、
+        ログイン中のユーザー自身が登録した食品（USER）も対象に含む。
+        他人が登録した USER food は決して返さない。
+      operationId: searchFoods
+      parameters:
+        - name: query
+          in: query
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 100 }
+          description: 検索語。食品名に対する部分一致。
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 検索結果。該当なしの場合は空配列。
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Food' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+    post:
+      tags: [foods]
+      summary: 独自の食品を登録する
+      description: |
+        マスタに無い食品をユーザーが登録する。`source` は USER に固定され、
+        登録者本人の検索にのみ現れる。栄養値は可食部 100g あたりで指定する。
+      operationId: createFood
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/FoodCreateRequest' }
+      responses:
+        '201':
+          description: 登録成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Food' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ---------------------------------------------------------------------------
+  # プロフィールと目標
+  # ---------------------------------------------------------------------------
+
+  /profile:
+    get:
+      tags: [profile]
+      summary: プロフィールを取得する
+      operationId: getProfile
+      responses:
+        '200':
+          description: 取得成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: プロフィール未設定
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                code: PROFILE_NOT_FOUND
+                message: プロフィールが未設定です。
+
+    put:
+      tags: [profile]
+      summary: プロフィールを登録・更新する
+      description: 未登録なら作成、登録済みなら更新する（upsert）。
+      operationId: upsertProfile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProfileRequest' }
+      responses:
+        '200':
+          description: 保存成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Profile' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /goals/suggestion:
+    get:
+      tags: [goals]
+      summary: 目標カロリーの提案を計算する
+      description: |
+        プロフィールと最新の体重記録から Mifflin-St Jeor 式で BMR / TDEE を求め、
+        目標カロリーと目標 PFC を提案する。**保存はしない。**
+
+        算出結果が BMR を下回る場合は BMR で打ち切り、`cappedAtBmr` を true にする。
+        減量ペースが非現実的であることを画面で伝えられるようにするため。
+
+        プロフィールまたは体重記録が無い場合は 409 を返す。計算に必要な入力が
+        揃っていないことを、検証エラーとは区別して伝える。
+      operationId: getGoalSuggestion
+      parameters:
+        - name: paceKgPerMonth
+          in: query
+          schema: { type: number, format: double, minimum: 0, maximum: 4, default: 2 }
+          description: 1 か月あたりの目標減量キログラム数。0 なら体重維持。
+      responses:
+        '200':
+          description: 算出成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/GoalSuggestion' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: 算出に必要なプロフィールまたは体重記録が無い
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                code: PROFILE_REQUIRED
+                message: 目標を算出するには、先にプロフィールと体重を登録してください。
+
+  /goals/current:
+    get:
+      tags: [goals]
+      summary: 現在有効な目標を取得する
+      description: 今日の日付以前で最も新しい start_on を持つ目標を返す。
+      operationId: getCurrentGoal
+      responses:
+        '200':
+          description: 取得成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 目標が未設定
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+
+  /goals:
+    put:
+      tags: [goals]
+      summary: 目標を確定して保存する
+      description: |
+        同じ開始日の目標が既にある場合は上書きする。開始日が異なる場合は
+        履歴として別の行を作る。過去の達成率を後から計算し直せるようにするため、
+        古い目標は消さない。
+      operationId: putGoal
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/GoalRequest' }
+      responses:
+        '200':
+          description: 保存成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Goal' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ---------------------------------------------------------------------------
+  # 体重記録
+  # ---------------------------------------------------------------------------
+
+  /body-records:
+    get:
+      tags: [body-records]
+      summary: 体重の推移を取得する
+      operationId: listBodyRecords
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: 記録のある日だけを日付昇順で返す
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/BodyRecord' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /body-records/{date}:
+    parameters:
+      - name: date
+        in: path
+        required: true
+        schema: { type: string, format: date }
+    put:
+      tags: [body-records]
+      summary: 体重を記録する
+      description: 1 日 1 レコード。同じ日に再度記録した場合は上書きする（upsert）。
+      operationId: putBodyRecord
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/BodyRecordRequest' }
+      responses:
+        '200':
+          description: 保存成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BodyRecord' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+    delete:
+      tags: [body-records]
+      summary: 体重記録を削除する
+      operationId: deleteBodyRecord
+      responses:
+        '204': { description: 削除完了。元から無い場合も 204（冪等）。 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  # ---------------------------------------------------------------------------
+  # 食事記録
+  # ---------------------------------------------------------------------------
+
+  /meal-logs:
+    get:
+      tags: [meal-logs]
+      summary: 指定日の食事記録を取得する
+      operationId: listMealLogs
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: 食事区分順に返す
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/MealLog' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+    post:
+      tags: [meal-logs]
+      summary: 食事を記録する
+      description: |
+        クライアントは食品 ID と分量だけを送る。**栄養値はサーバーが計算する。**
+        計算式がクライアントとサーバーに二重に存在すると、Web とモバイルで
+        結果がずれる余地が生まれるため。
+
+        計算した栄養値は記録側の行にスナップショットとして保存され、
+        以後マスタが改訂されても過去の記録は変わらない。
+      operationId: createMealLog
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MealLogRequest' }
+      responses:
+        '201':
+          description: 記録成功
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/MealLog' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404':
+          description: 指定された食品が存在しない、または参照できない
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ApiError' }
+              example:
+                code: FOOD_NOT_FOUND
+                message: 指定された食品が見つかりません。
+
+  /meal-logs/{id}:
+    parameters:
+      - name: id
+        in: path
+        required: true
+        schema: { type: integer, format: int64 }
+    delete:
+      tags: [meal-logs]
+      summary: 食事記録を削除する
+      description: |
+        他人の記録の ID を指定した場合は 403 ではなく **404** を返す。
+        403 だと「その ID は存在する」ことを教えてしまうため。
+      operationId: deleteMealLog
+      responses:
+        '204': { description: 削除完了 }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  # ---------------------------------------------------------------------------
+  # 集計
+  # ---------------------------------------------------------------------------
+
+  /summaries/daily:
+    get:
+      tags: [summaries]
+      summary: 指定日の栄養集計
+      description: |
+        ダッシュボードの主データ。摂取合計、目標、差分、食事区分ごとの内訳を返す。
+        目標が未設定の場合、`goal` と `remaining` は null になる（エラーにはしない）。
+      operationId: getDailySummary
+      parameters:
+        - name: date
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: 集計結果
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DailySummary' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /summaries/range:
+    get:
+      tags: [summaries]
+      summary: 期間の日別推移
+      description: |
+        グラフ用。指定期間のすべての日を返す（記録が無い日は 0 kcal として含む）。
+        体重は記録のある日のみ値を持ち、あわせて 7 日移動平均を返す。
+        体重は日々 1kg 前後変動するため、生の値だけでは傾向が読めないことによる。
+      operationId: getRangeSummary
+      parameters:
+        - name: from
+          in: query
+          required: true
+          schema: { type: string, format: date }
+        - name: to
+          in: query
+          required: true
+          schema: { type: string, format: date }
+      responses:
+        '200':
+          description: 日別の推移
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RangeSummary' }
+        '400': { $ref: '#/components/responses/ValidationError' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -258,6 +636,287 @@ components:
           type: string
           format: date-time
 
+    # -------------------------------------------------------------------------
+    # 食品
+    # -------------------------------------------------------------------------
+
+    Nutrition:
+      type: object
+      description: 栄養値。food では可食部 100g あたり、記録では実際に摂取した量に対する値。
+      required: [kcal, proteinG, fatG, carbG]
+      properties:
+        kcal:      { type: number, format: double, minimum: 0 }
+        proteinG:  { type: number, format: double, minimum: 0 }
+        fatG:      { type: number, format: double, minimum: 0 }
+        carbG:     { type: number, format: double, minimum: 0 }
+        saltG:     { type: [number, 'null'], format: double, minimum: 0 }
+        fiberG:    { type: [number, 'null'], format: double, minimum: 0 }
+        sugarG:    { type: [number, 'null'], format: double, minimum: 0 }
+
+    FoodSource:
+      type: string
+      enum: [SEED, MEXT, OFF, USER]
+      description: |
+        食品データの出所。
+        * `SEED` — Phase 1 で投入した代表値。**おおよその値であり、正確な栄養計算には使えない。**
+        * `MEXT` — 日本食品標準成分表から取り込んだ値（Phase 3）
+        * `OFF`  — Open Food Facts 由来（Phase 3）
+        * `USER` — ユーザーが手動登録した食品。登録者本人にのみ見える。
+
+    Food:
+      type: object
+      required: [id, source, name, nutritionPer100g]
+      properties:
+        id:       { type: integer, format: int64 }
+        source:   { $ref: '#/components/schemas/FoodSource' }
+        name:     { type: string, examples: ['ごはん（精白米）'] }
+        nameKana: { type: [string, 'null'] }
+        category: { type: [string, 'null'], examples: ['穀類'] }
+        nutritionPer100g: { $ref: '#/components/schemas/Nutrition' }
+
+    FoodCreateRequest:
+      type: object
+      required: [name, nutritionPer100g]
+      properties:
+        name:     { type: string, minLength: 1, maxLength: 200 }
+        nameKana: { type: [string, 'null'], maxLength: 200 }
+        category: { type: [string, 'null'], maxLength: 100 }
+        nutritionPer100g: { $ref: '#/components/schemas/Nutrition' }
+
+    # -------------------------------------------------------------------------
+    # プロフィールと目標
+    # -------------------------------------------------------------------------
+
+    Sex:
+      type: string
+      enum: [MALE, FEMALE]
+      description: Mifflin-St Jeor 式が男女で異なる定数を使うため、この 2 値のみ。
+
+    ActivityLevel:
+      type: string
+      enum: [SEDENTARY, LIGHT, MODERATE, ACTIVE, VERY_ACTIVE]
+      description: TDEE の活動係数。順に 1.2 / 1.375 / 1.55 / 1.725 / 1.9。
+
+    ProfileRequest:
+      type: object
+      required: [sex, birthDate, heightCm, activityLevel]
+      properties:
+        sex:           { $ref: '#/components/schemas/Sex' }
+        birthDate:     { type: string, format: date }
+        heightCm:      { type: number, format: double, minimum: 50, maximum: 250 }
+        activityLevel: { $ref: '#/components/schemas/ActivityLevel' }
+
+    Profile:
+      allOf:
+        - $ref: '#/components/schemas/ProfileRequest'
+        - type: object
+          required: [age]
+          properties:
+            age:
+              type: integer
+              description: 生年月日から算出した現在の年齢。クライアントで計算させない。
+
+    GoalSuggestion:
+      type: object
+      required: [bmr, tdee, targetKcal, targetProteinG, targetFatG, targetCarbG, paceKgPerMonth, cappedAtBmr, basedOnWeightKg]
+      properties:
+        bmr:
+          type: integer
+          description: 基礎代謝量（kcal/日）。Mifflin-St Jeor 式による。
+        tdee:
+          type: integer
+          description: 総消費カロリー（kcal/日）。BMR × 活動係数。
+        targetKcal:      { type: integer }
+        targetProteinG:  { type: number, format: double }
+        targetFatG:      { type: number, format: double }
+        targetCarbG:     { type: number, format: double }
+        paceKgPerMonth:  { type: number, format: double }
+        cappedAtBmr:
+          type: boolean
+          description: |
+            true の場合、指定した減量ペースでは目標が BMR を下回るため
+            BMR で打ち切っている。画面で「このペースは達成できない」と伝えること。
+        basedOnWeightKg:
+          type: number
+          format: double
+          description: 算出に使った体重。プロフィールではなく体重記録の最新値。
+
+    GoalRequest:
+      type: object
+      required: [targetKcal, targetProteinG, targetFatG, targetCarbG]
+      properties:
+        startOn:
+          type: [string, 'null']
+          format: date
+          description: 省略した場合は今日。
+        targetKcal:      { type: integer, minimum: 500, maximum: 10000 }
+        targetProteinG:  { type: number, format: double, minimum: 0 }
+        targetFatG:      { type: number, format: double, minimum: 0 }
+        targetCarbG:     { type: number, format: double, minimum: 0 }
+        paceKgPerMonth:  { type: [number, 'null'], format: double }
+
+    Goal:
+      type: object
+      required: [id, startOn, targetKcal, targetProteinG, targetFatG, targetCarbG]
+      properties:
+        id:              { type: integer, format: int64 }
+        startOn:         { type: string, format: date }
+        targetKcal:      { type: integer }
+        targetProteinG:  { type: number, format: double }
+        targetFatG:      { type: number, format: double }
+        targetCarbG:     { type: number, format: double }
+        paceKgPerMonth:  { type: [number, 'null'], format: double }
+
+    # -------------------------------------------------------------------------
+    # 体重
+    # -------------------------------------------------------------------------
+
+    BodyRecordRequest:
+      type: object
+      required: [weightKg]
+      properties:
+        weightKg:   { type: number, format: double, minimum: 20, maximum: 300 }
+        bodyFatPct: { type: [number, 'null'], format: double, minimum: 1, maximum: 70 }
+
+    BodyRecord:
+      type: object
+      required: [recordedOn, weightKg]
+      properties:
+        recordedOn: { type: string, format: date }
+        weightKg:   { type: number, format: double }
+        bodyFatPct: { type: [number, 'null'], format: double }
+
+    # -------------------------------------------------------------------------
+    # 食事記録
+    # -------------------------------------------------------------------------
+
+    MealType:
+      type: string
+      enum: [BREAKFAST, LUNCH, DINNER, SNACK]
+
+    MealLogItemRequest:
+      type: object
+      required: [foodId, amountG]
+      properties:
+        foodId:  { type: integer, format: int64 }
+        amountG: { type: number, format: double, exclusiveMinimum: 0, maximum: 10000 }
+
+    MealLogRequest:
+      type: object
+      required: [eatenOn, mealType, items]
+      properties:
+        eatenOn:  { type: string, format: date }
+        mealType: { $ref: '#/components/schemas/MealType' }
+        note:     { type: [string, 'null'], maxLength: 500 }
+        items:
+          type: array
+          minItems: 1
+          maxItems: 50
+          items: { $ref: '#/components/schemas/MealLogItemRequest' }
+
+    MealLogItem:
+      type: object
+      description: |
+        栄養値は登録時点のスナップショット。食品マスタが改訂されても、
+        既存の記録のこれらの値は変わらない。
+      required: [id, foodName, amountG, nutrition]
+      properties:
+        id:       { type: integer, format: int64 }
+        foodId:
+          type: [integer, 'null']
+          format: int64
+          description: マスタから食品が削除された場合は null になるが、記録自体は残る。
+        foodName: { type: string }
+        amountG:  { type: number, format: double }
+        nutrition: { $ref: '#/components/schemas/Nutrition' }
+
+    MealLog:
+      type: object
+      required: [id, eatenOn, mealType, items, total]
+      properties:
+        id:       { type: integer, format: int64 }
+        eatenOn:  { type: string, format: date }
+        mealType: { $ref: '#/components/schemas/MealType' }
+        note:     { type: [string, 'null'] }
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/MealLogItem' }
+        total:
+          allOf: [{ $ref: '#/components/schemas/Nutrition' }]
+          description: この食事の合計。
+
+    # -------------------------------------------------------------------------
+    # 集計
+    # -------------------------------------------------------------------------
+
+    MealTypeTotal:
+      type: object
+      required: [mealType, total]
+      properties:
+        mealType: { $ref: '#/components/schemas/MealType' }
+        total:    { $ref: '#/components/schemas/Nutrition' }
+
+    DailySummary:
+      type: object
+      required: [date, total, byMealType]
+      properties:
+        date:  { type: string, format: date }
+        total: { $ref: '#/components/schemas/Nutrition' }
+        byMealType:
+          type: array
+          description: 記録のある食事区分のみ。朝食・昼食・夕食・間食の順。
+          items: { $ref: '#/components/schemas/MealTypeTotal' }
+        goal:
+          oneOf:
+            - $ref: '#/components/schemas/Goal'
+            - type: 'null'
+          description: 目標が未設定なら null。エラーにはしない。
+        remaining:
+          oneOf:
+            - $ref: '#/components/schemas/Nutrition'
+            - type: 'null'
+          description: |
+            目標 − 摂取。目標未設定なら null。
+            超過している場合は負の値になる（0 で切り上げない）。
+        weightKg:
+          type: [number, 'null']
+          format: double
+          description: その日の体重記録。無ければ null。
+
+    DailyPoint:
+      type: object
+      required: [date, kcal, proteinG, fatG, carbG]
+      properties:
+        date:      { type: string, format: date }
+        kcal:      { type: number, format: double }
+        proteinG:  { type: number, format: double }
+        fatG:      { type: number, format: double }
+        carbG:     { type: number, format: double }
+        targetKcal:
+          type: [integer, 'null']
+          description: その日に有効だった目標。目標は履歴で持つため日ごとに変わりうる。
+        weightKg:
+          type: [number, 'null']
+          format: double
+          description: 実測値。記録が無い日は null。
+        weightMovingAvgKg:
+          type: [number, 'null']
+          format: double
+          description: |
+            直近 7 日間の記録のある日だけで計算した移動平均。
+            記録が 1 件も無い期間は null。
+
+    RangeSummary:
+      type: object
+      required: [from, to, days]
+      properties:
+        from: { type: string, format: date }
+        to:   { type: string, format: date }
+        days:
+          type: array
+          description: 指定期間のすべての日。記録が無い日も 0 kcal として含む。
+          items: { $ref: '#/components/schemas/DailyPoint' }
+
     ApiError:
       type: object
       required: [code, message]
@@ -314,6 +973,18 @@ components:
           example:
             code: UNAUTHORIZED
             message: 認証が必要です。
+
+    NotFound:
+      description: |
+        対象が存在しない。他人のリソースを指定した場合もこれを返す。
+        403 だと「その ID は存在する」ことを教えてしまうため。
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: NOT_FOUND
+            message: 対象が見つかりません。
 
 security:
   - bearerAuth: []

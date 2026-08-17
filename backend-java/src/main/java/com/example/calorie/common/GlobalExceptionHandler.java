@@ -1,5 +1,6 @@
 package com.example.calorie.common;
 
+import jakarta.validation.ConstraintViolationException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -7,6 +8,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 import java.util.List;
 
@@ -35,6 +37,37 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .badRequest()
                 .body(ApiErrorResponse.validation("入力内容に誤りがあります。", details));
+    }
+
+    /**
+     * {@code @RequestParam} や {@code @PathVariable} に付けた制約の違反。
+     * リクエストボディの検証（上）とは別の例外型になるが、応答形式は揃える。
+     */
+    @ExceptionHandler(ConstraintViolationException.class)
+    public ResponseEntity<ApiErrorResponse> handleConstraintViolation(ConstraintViolationException e) {
+        List<ApiErrorResponse.FieldErrorDetail> details = e.getConstraintViolations().stream()
+                .map(v -> new ApiErrorResponse.FieldErrorDetail(lastNode(v), v.getMessage()))
+                .toList();
+        return ResponseEntity
+                .badRequest()
+                .body(ApiErrorResponse.validation("入力内容に誤りがあります。", details));
+    }
+
+    /** "search.query" のようなプロパティパスから、末尾のパラメータ名だけを取り出す。 */
+    private static String lastNode(jakarta.validation.ConstraintViolation<?> violation) {
+        String path = violation.getPropertyPath().toString();
+        int lastDot = path.lastIndexOf('.');
+        return lastDot < 0 ? path : path.substring(lastDot + 1);
+    }
+
+    /** 型が合わないクエリパラメータ（日付形式の誤りなど）。 */
+    @ExceptionHandler(MethodArgumentTypeMismatchException.class)
+    public ResponseEntity<ApiErrorResponse> handleTypeMismatch(MethodArgumentTypeMismatchException e) {
+        return ResponseEntity
+                .badRequest()
+                .body(ApiErrorResponse.validation("入力内容に誤りがあります。", List.of(
+                        new ApiErrorResponse.FieldErrorDetail(e.getName(), "形式が正しくありません")
+                )));
     }
 
     @ExceptionHandler(Exception.class)
