@@ -1,0 +1,24 @@
+# テスト実行時の設定。Java 側と同じ calorie_test を使う。
+# テスト前に `docker compose up -d db` で DB が起動している必要がある。
+#
+# 注意: テスト DB のスキーマは Java 側の Flyway が作る。Kotlin 側のテストを
+# 先に走らせると、スキーマが無いために ddl-auto=validate で落ちる。
+# その場合は backend-java のテストを一度実行してスキーマを作る。
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:55432}/${TEST_DB_NAME:calorie_test}
+    # テストでも app_kotlin を使い、権限の条件まで本番と揃える
+    username: ${KOTLIN_DB_USER:app_kotlin}
+    password: ${KOTLIN_DB_PASSWORD:app_kotlin_pw}
+
+app:
+  jwt:
+    secret: test-only-signing-key-must-be-at-least-32-bytes-long
+    access-token-minutes: 30
+    refresh-token-days: 30
+
+logging:
+  level:
+    com.example.calorie: INFO
+    org.springframework.web: WARN

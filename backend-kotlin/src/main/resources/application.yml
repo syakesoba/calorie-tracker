@@ -1,0 +1,57 @@
+spring:
+  application:
+    name: calorie-backend-kotlin
+
+  datasource:
+    # Java 実装と同じ PostgreSQL インスタンス・同じデータベースを見る。
+    # ユーザーだけを分けており、app_kotlin には DML 権限しかない。
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:55432}/${DB_NAME:calorie}
+    username: ${KOTLIN_DB_USER:app_kotlin}
+    password: ${KOTLIN_DB_PASSWORD:app_kotlin_pw}
+
+  jpa:
+    hibernate:
+      # スキーマは Java 側の Flyway が所有する。ここでは検証だけ行い、
+      # エンティティ定義とスキーマがずれたら起動時に落とす。
+      ddl-auto: validate
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    # 【重要】Kotlin 側は絶対にマイグレーションを実行しない。
+    # スキーマの所有者を 1 つに保つための設定であり、有効にしてはならない。
+    enabled: false
+
+  # Java 実装と同じ理由で null 省略は行わない。キーを消すと「値が null」と
+  # 「キーが無い」の区別がクライアントに持ち込まれ、2 実装のあいだで
+  # 暗黙の差異になる。
+
+server:
+  port: 8081
+  error:
+    include-message: never
+    include-stacktrace: never
+
+app:
+  jwt:
+    # 既定値を Java 側と同一にしている。実運用では別々でよいが、
+    # 「Java が発行したトークンを Kotlin が検証できる」相互運用を
+    # 契約テストで確認したいため、開発時は揃える。
+    secret: ${JWT_SECRET:local-development-only-secret-key-change-me-please-32bytes+}
+    access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:30}
+    refresh-token-days: ${JWT_REFRESH_TOKEN_DAYS:30}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:19006,http://192.168.*.*:*}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    com.example.calorie: DEBUG
