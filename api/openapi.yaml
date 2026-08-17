@@ -1,0 +1,319 @@
+openapi: 3.1.0
+
+# =============================================================================
+# カロリー管理アプリ API 仕様
+#
+# このファイルが API の唯一の正である。
+# Java 実装（:8080）と Kotlin 実装（:8081）は、どちらもこの契約を満たす。
+#
+# 【変更手順】
+#   1. このファイルを直す
+#   2. Java 実装を追従させる
+#   3. Kotlin 実装を追従させる（Phase 2 以降）
+#   4. 契約テストを両方に対して流す
+# 実装を先に書いてはならない。仕様が揺れると 2 実装の比較が成立しなくなる。
+# =============================================================================
+
+info:
+  title: カロリー管理アプリ API
+  version: 0.1.0
+  description: |
+    食事・体組成・運動を記録し、栄養収支を可視化するアプリケーションの API。
+
+    Phase 0 の時点では認証エンドポイントのみを定義している。
+    食事記録・集計は Phase 1 で追加する。
+
+servers:
+  - url: http://localhost:8080/api
+    description: Java 実装（Web フロント向け）
+  - url: http://localhost:8081/api
+    description: Kotlin 実装（モバイル向け・Phase 2 以降）
+
+tags:
+  - name: auth
+    description: 認証とアカウント
+
+paths:
+  /auth/signup:
+    post:
+      tags: [auth]
+      summary: 新規登録
+      description: |
+        ユーザーを登録し、そのままログイン状態にするためのトークン一式を返す。
+        メールアドレスは小文字に正規化して保存されるため、大文字違いは同一とみなす。
+      operationId: signUp
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignUpRequest'
+      responses:
+        '201':
+          description: 登録成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '409':
+          description: メールアドレスが既に使われている
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: EMAIL_ALREADY_USED
+                message: このメールアドレスは既に登録されています。
+
+  /auth/login:
+    post:
+      tags: [auth]
+      summary: ログイン
+      description: |
+        認証に失敗した場合、「ユーザーが存在しない」と「パスワードが違う」を
+        区別できる情報は返さない。メールアドレスの存在推測を防ぐため、
+        応答本文も応答時間も同一にする。
+      operationId: login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: ログイン成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          description: 認証失敗
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: INVALID_CREDENTIALS
+                message: メールアドレスまたはパスワードが正しくありません。
+
+  /auth/refresh:
+    post:
+      tags: [auth]
+      summary: トークン更新
+      description: |
+        リフレッシュトークンを新しいトークン一式と交換する。
+        使用したリフレッシュトークンはその場で失効する（ローテーション）ため、
+        同じトークンで 2 回続けて更新することはできない。
+      operationId: refreshToken
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '200':
+          description: 更新成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          description: リフレッシュトークンが無効、失効済み、または期限切れ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: INVALID_REFRESH_TOKEN
+                message: リフレッシュトークンが無効です。再度ログインしてください。
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: ログアウト
+      description: |
+        渡されたリフレッシュトークンを失効させる。
+        存在しないトークンを渡された場合もエラーにせず 204 を返す（冪等）。
+        アクセストークンは自己完結型のため、有効期限までは失効しない。
+      operationId: logout
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshTokenRequest'
+      responses:
+        '204':
+          description: ログアウト完了
+        '400':
+          $ref: '#/components/responses/ValidationError'
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: ログイン中のユーザー情報
+      operationId: getCurrentUser
+      responses:
+        '200':
+          description: 取得成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SignUpRequest:
+      type: object
+      required: [email, password, displayName]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 255
+          examples: ['taro@example.com']
+        password:
+          type: string
+          format: password
+          minLength: 8
+          description: |
+            8 文字以上。BCrypt の制約により UTF-8 で 72 バイトを超えると
+            400（PASSWORD_TOO_LONG）になる。
+          examples: ['password1234']
+        displayName:
+          type: string
+          maxLength: 50
+          examples: ['山田太郎']
+
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+        password:
+          type: string
+          format: password
+
+    RefreshTokenRequest:
+      type: object
+      required: [refreshToken]
+      properties:
+        refreshToken:
+          type: string
+
+    TokenResponse:
+      type: object
+      required: [accessToken, refreshToken, tokenType, expiresIn]
+      properties:
+        accessToken:
+          type: string
+          description: JWT（HS256）。Authorization ヘッダに Bearer として付ける。
+        refreshToken:
+          type: string
+          description: ランダム文字列。サーバー側に実体があり、失効させられる。
+        tokenType:
+          type: string
+          const: Bearer
+        expiresIn:
+          type: integer
+          format: int64
+          description: アクセストークンの有効期間（秒）
+          examples: [1800]
+
+    UserResponse:
+      type: object
+      required: [id, email, displayName, createdAt]
+      properties:
+        id:
+          type: integer
+          format: int64
+        email:
+          type: string
+          format: email
+        displayName:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    ApiError:
+      type: object
+      required: [code, message]
+      description: |
+        すべてのエラー応答はこの形式で返す。Java 実装と Kotlin 実装で
+        形が揺れると、生成されたクライアントが両対応できなくなる。
+      properties:
+        code:
+          type: string
+          description: プログラムから分岐するための機械可読なコード
+          examples: ['INVALID_CREDENTIALS']
+        message:
+          type: string
+          description: 画面にそのまま表示できる日本語メッセージ
+        errors:
+          type: array
+          description: 入力検証エラーの明細。検証エラー以外では省略される。
+          items:
+            $ref: '#/components/schemas/FieldError'
+
+    FieldError:
+      type: object
+      required: [field, message]
+      properties:
+        field:
+          type: string
+          examples: ['email']
+        message:
+          type: string
+          examples: ['メールアドレスの形式が正しくありません']
+
+  responses:
+    ValidationError:
+      description: 入力内容が不正
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: VALIDATION_ERROR
+            message: 入力内容に誤りがあります。
+            errors:
+              - field: email
+                message: 電子メールアドレスとして正しい形式にしてください
+              - field: password
+                message: パスワードは 8 文字以上 72 文字以下にしてください
+
+    Unauthorized:
+      description: 認証が必要、またはトークンが無効
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: UNAUTHORIZED
+            message: 認証が必要です。
+
+security:
+  - bearerAuth: []

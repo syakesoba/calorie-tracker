@@ -1,0 +1,33 @@
+# カロリー管理アプリ ローカル開発環境
+# 起動: docker compose up -d db
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: calorie-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: calorie
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      TZ: Asia/Tokyo
+      # 日本語を含むデータの照合順序を安定させる
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=C"
+    ports:
+      # ホスト側は 55432。この PC には PostgreSQL 16 / 18 がサービスとして
+      # 常駐しており 5432 を占有しているため、衝突を避けて別ポートに逃がす。
+      # 既存のローカル PostgreSQL には一切手を加えない方針。
+      - "55432:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+      # 初回起動時のみ実行される。ユーザー作成と権限付与。
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d calorie"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  db-data:
+    name: calorie-db-data

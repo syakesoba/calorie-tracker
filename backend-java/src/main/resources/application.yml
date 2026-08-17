@@ -1,0 +1,55 @@
+spring:
+  application:
+    name: calorie-backend-java
+
+  datasource:
+    # ポート 55432 は docker-compose.yml のホスト側マッピング。
+    # ローカルに常駐する PostgreSQL 16 / 18 と衝突させないための値。
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:55432}/${DB_NAME:calorie}
+    username: ${JAVA_DB_USER:app_java}
+    password: ${JAVA_DB_PASSWORD:app_java_pw}
+
+  jpa:
+    hibernate:
+      # スキーマは Flyway が作る。Hibernate には検証だけさせる。
+      # ここを update にしてはならない（Flyway と二重管理になる）。
+      ddl-auto: validate
+    # トランザクション外での遅延ロードを禁止し、N+1 を握り潰さないようにする
+    open-in-view: false
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+
+  jackson:
+    default-property-inclusion: non_null
+
+server:
+  port: 8080
+  error:
+    # 例外メッセージは GlobalExceptionHandler 経由でのみ返す
+    include-message: never
+    include-stacktrace: never
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:local-development-only-secret-key-change-me-please-32bytes+}
+    access-token-minutes: ${JWT_ACCESS_TOKEN_MINUTES:30}
+    refresh-token-days: ${JWT_REFRESH_TOKEN_DAYS:30}
+  cors:
+    # Next.js (3000) / Expo web (19006) / LAN 上の実機からのアクセスを許可する
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:19006,http://192.168.*.*:*}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+logging:
+  level:
+    com.example.calorie: DEBUG

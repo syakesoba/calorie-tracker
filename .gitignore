@@ -1,0 +1,28 @@
+# 環境依存・秘匿情報
+.env
+*.local
+
+# Gradle
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+.vscode/
+!.vscode/settings.json
+
+# ログ・一時ファイル
+*.log
+logs/
+
+# Node (Phase 1 以降)
+node_modules/
+.next/
+.expo/
+dist/
+
+# OS
+Thumbs.db
+.DS_Store
