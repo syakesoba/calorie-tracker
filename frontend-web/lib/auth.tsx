@@ -10,7 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { api, tokenStore } from "./api";
+import { ApiRequestError, api, tokenStore } from "./api";
 import type { AuthUser } from "./types";
 
 interface AuthState {
@@ -42,8 +42,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       try {
         const me = await api.me();
         if (!cancelled) setUser(me);
-      } catch {
-        tokenStore.clear();
+      } catch (e) {
+        // トークンを捨てるのは「認証が拒否された」ときだけ。
+        // サーバーが一時的に落ちている・CORS で弾かれた等の到達不能を
+        // ログアウト扱いにすると、復帰後に再ログインを強いることになる。
+        if (e instanceof ApiRequestError && e.status === 401) {
+          tokenStore.clear();
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }

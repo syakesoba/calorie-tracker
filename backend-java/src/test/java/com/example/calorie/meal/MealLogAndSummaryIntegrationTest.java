@@ -135,15 +135,24 @@ class MealLogAndSummaryIntegrationTest {
     }
 
     @Test
-    @DisplayName("目標が未設定でも集計は返り、目標と残量だけが null になる")
+    @DisplayName("目標が未設定でも集計は返り、目標と残量はキーを保ったまま null になる")
     void summaryWorksWithoutGoal() throws Exception {
         createMealLog("BREAKFAST", riceFoodId, 100);
 
-        mockMvc.perform(auth(get("/api/summaries/daily")).param("date", DATE))
+        MvcResult result = mockMvc.perform(auth(get("/api/summaries/daily")).param("date", DATE))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.total.kcal").value(168.00))
-                .andExpect(jsonPath("$.goal").doesNotExist())
-                .andExpect(jsonPath("$.remaining").doesNotExist());
+                .andReturn();
+
+        JsonNode json = objectMapper.readTree(result.getResponse().getContentAsString());
+
+        // キーごと消すのではなく、キーは存在して値が null であること。
+        // 「値が null」と「キーが無い」の区別をクライアントに持ち込まないため。
+        // JsonPath の exists() は明示的な null を「値なし」と扱うので、生 JSON で確認する。
+        assertThat(json.has("goal")).as("goal キーが存在すること").isTrue();
+        assertThat(json.get("goal").isNull()).as("goal が null であること").isTrue();
+        assertThat(json.has("remaining")).as("remaining キーが存在すること").isTrue();
+        assertThat(json.get("remaining").isNull()).as("remaining が null であること").isTrue();
     }
 
     @Test

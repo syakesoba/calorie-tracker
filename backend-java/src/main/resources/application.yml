@@ -25,8 +25,13 @@ spring:
     enabled: true
     locations: classpath:db/migration
 
-  jackson:
-    default-property-inclusion: non_null
+  # Jackson の null 省略（default-property-inclusion: non_null）はあえて設定しない。
+  #
+  # null を省略するとフィールドがレスポンスから消えるため、「値が null」と
+  # 「キーごと存在しない」の区別がクライアント側に持ち込まれる。
+  # api/openapi.yaml は weightKg などを「存在して null」と定義しており、
+  # Kotlin 実装にも同じ形を要求する以上、省略は暗黙の差異になりやすい。
+  # 省略したい箇所（ApiErrorResponse.errors）だけクラス単位で指定する。
 
 server:
   port: 8080
